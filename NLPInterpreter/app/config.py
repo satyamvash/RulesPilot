@@ -12,6 +12,11 @@ class Settings(BaseSettings):
     # app-control-manager GraphQL endpoint
     acm_graphql_url: str = "http://localhost:8080/nac/config-service/graphql"
 
+    # Whisper (local speech-to-text)
+    # Options: tiny (~150MB), base (~300MB), small (~500MB), medium (~1.5GB)
+    # tiny = fastest, good enough for clear speech
+    whisper_model: str = "tiny"
+
     # Service config
     port: int = 8082
     log_level: str = "INFO"
