@@ -6,13 +6,14 @@ class Settings(BaseSettings):
 
     # Anthropic
     anthropic_api_key: str
-    # claude-3-haiku is the lowest cost Anthropic model
+    # claude-haiku is the lowest cost Anthropic model
     anthropic_model: str = "claude-haiku-4-5-20251001"
 
     # app-control-manager GraphQL endpoint
-    acm_graphql_url: str
+    acm_graphql_url: str = "http://localhost:8080/nac/config-service/graphql"
 
     # Service config
+    port: int = 8082
     log_level: str = "INFO"
     max_input_length: int = 4000
 

@@ -4,19 +4,9 @@ from typing import Any
 from pydantic import BaseModel, Field
 
 
-class RuleAction(StrEnum):
+class Behavior(StrEnum):
     ALLOW = "ALLOW"
     BLOCK = "BLOCK"
-
-
-class RuleStatus(StrEnum):
-    ACTIVE = "ACTIVE"
-    INACTIVE = "INACTIVE"
-
-
-class HashType(StrEnum):
-    SHA256 = "SHA256"
-    MD5 = "MD5"
 
 
 class OsType(StrEnum):
@@ -25,20 +15,49 @@ class OsType(StrEnum):
     LINUX = "LINUX"
 
 
-class HashCriteria(BaseModel):
-    hash_type: HashType = HashType.SHA256
-    value: str = Field(..., description="The hash value")
+class ScopeType(StrEnum):
+    SITE = "SITE"
+    ACCOUNT = "ACCOUNT"
+    GROUP = "GROUP"
+
+
+class Scope(BaseModel):
+    scope_type: ScopeType = Field(..., description="SITE, ACCOUNT, or GROUP")
+    scope_ids: list[str] = Field(..., description="List of scope IDs")
+
+
+class RuleParameters(BaseModel):
+    """Main rule match criteria — all fields optional, at least one should be provided."""
+
+    publisher: str | None = Field(None, description="Publisher / signer name")
+    path: str | None = Field(None, description="File path")
+    process: str | None = Field(None, description="Process name")
+    parent_process: str | None = Field(None, description="Parent process name")
+    sha256: str | None = Field(None, description="SHA256 hash value")
+    signer: str | None = Field(None, description="Signer name")
+
+
+class RuleException(BaseModel):
+    """A single exception entry for the rule."""
+
+    publisher: str | None = None
+    path: str | None = None
+    process: str | None = None
+    parent_process: str | None = None
+    sha256: str | None = None
+    signer: str | None = None
 
 
 class NacRuleIntent(BaseModel):
-    """Structured intent extracted from free-form user text."""
+    """Structured intent extracted from free-form user text — mirrors the ACM GraphQL schema."""
 
-    name: str = Field(..., description="Name of the NAC rule")
-    action: RuleAction = Field(..., description="ALLOW or BLOCK")
-    hash: HashCriteria | None = Field(None, description="Hash/SHA256 criteria")
-    os_types: list[OsType] | None = Field(None, description="Target OS types")
-    description: str | None = Field(None, description="Optional rule description")
-    status: RuleStatus = Field(RuleStatus.ACTIVE, description="ACTIVE or INACTIVE")
+    rule_name: str = Field(..., description="Name of the NAC rule")
+    behavior: Behavior = Field(..., description="ALLOW or BLOCK")
+    os_type: list[OsType] = Field(..., description="Target OS types")
+    scope: Scope = Field(..., description="Scope of the rule")
+    parameters: RuleParameters = Field(..., description="Rule match criteria")
+    exceptions: list[RuleException] = Field(default_factory=list, description="Exception entries")
+    propagation: bool = Field(True, description="Whether to propagate to child scopes")
 
 
 class ClarificationNeeded(BaseModel):
