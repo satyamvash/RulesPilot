@@ -27,9 +27,12 @@ import json
 import logging
 
 import anthropic
+import truststore
+
+truststore.inject_into_ssl()
 
 from app.config import settings
-from app.models.rule import ClarificationNeeded, NacRuleIntent
+from app.models.rule import ClarificationNeeded, DeleteIntent, NacRuleIntent, UpdateIntent
 
 logger = logging.getLogger(__name__)
 
@@ -281,3 +284,185 @@ def interpret(user_text: str) -> NacRuleIntent | ClarificationNeeded:
         return ClarificationNeeded.model_validate(tool_use.input)
 
     raise ValueError(f"Unexpected tool name: {tool_use.name}")
+
+
+_DELETE_TOOLS: list[anthropic.types.ToolParam] = [
+    {
+        "name": "emit_delete_intent",
+        "description": "Extract rule IDs and scope from user text to delete NAC rules.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "rule_ids": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "description": "One or more numeric rule IDs to delete.",
+                },
+                "scope_type": {
+                    "type": "string",
+                    "enum": ["SITE", "ACCOUNT", "GROUP"],
+                    "description": "Scope type. Default SITE.",
+                },
+                "scope_id": {
+                    "type": "string",
+                    "description": "The numeric scope ID (site/group/account).",
+                },
+            },
+            "required": ["rule_ids", "scope_id"],
+        },
+    },
+    {
+        "name": "request_clarification",
+        "description": "Ask for missing rule ID or scope ID.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "missing_fields": {"type": "array", "items": {"type": "string"}},
+                "questions": {"type": "array", "items": {"type": "string"}},
+            },
+            "required": ["missing_fields", "questions"],
+        },
+    },
+]
+
+_DELETE_SYSTEM: list[anthropic.types.TextBlockParam] = [
+    {
+        "type": "text",
+        "text": (
+            "You are a NAC rule deletion assistant. Extract rule IDs and scope from the user's text.\n"
+            "Call emit_delete_intent when rule_ids and scope_id are present.\n"
+            "Call request_clarification if rule ID or scope ID is missing."
+        ),
+        "cache_control": {"type": "ephemeral"},
+    }
+]
+
+
+def interpret_delete(user_text: str) -> DeleteIntent | ClarificationNeeded:
+    """Extract delete intent from free-form text."""
+    logger.info("Interpreting delete request (length=%d)", len(user_text))
+
+    response = _client.messages.create(
+        model=settings.anthropic_model,
+        max_tokens=256,
+        temperature=0,
+        system=_DELETE_SYSTEM,
+        tools=_DELETE_TOOLS,
+        tool_choice={"type": "any"},
+        messages=[{"role": "user", "content": user_text}],
+    )
+
+    tool_use = next((b for b in response.content if b.type == "tool_use"), None)
+    if tool_use is None:
+        raise ValueError("Claude did not call a tool.")
+
+    if tool_use.name == "emit_delete_intent":
+        args = tool_use.input
+        return DeleteIntent(
+            rule_ids=args["rule_ids"],
+            scope_type=args.get("scope_type", "SITE"),
+            scope_id=args["scope_id"],
+        )
+
+    if tool_use.name == "request_clarification":
+        return ClarificationNeeded.model_validate(tool_use.input)
+
+    raise ValueError(f"Unexpected tool: {tool_use.name}")
+
+
+_UPDATE_TOOLS: list[anthropic.types.ToolParam] = [
+    {
+        "name": "emit_update_intent",
+        "description": (
+            "Extract the rule ID, scope, and only the fields the user explicitly wants to change. "
+            "Do NOT include fields the user did not mention."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "rule_id": {"type": "string", "description": "Numeric rule ID to update."},
+                "scope_id": {"type": "string", "description": "Numeric site/group/account ID."},
+                "scope_type": {"type": "string", "enum": ["SITE", "ACCOUNT", "GROUP"], "description": "Scope type. Default SITE."},
+                "rule_name": {"type": "string", "description": "New rule name, if the user wants to rename it."},
+                "behavior": {"type": "string", "enum": ["ALLOW", "BLOCK"], "description": "New behavior, if changing."},
+                "os_type": {"type": "array", "items": {"type": "string", "enum": ["WINDOWS", "MACOS", "LINUX"]}, "description": "New OS types, if changing."},
+                "propagation": {"type": "boolean", "description": "New propagation setting, if changing."},
+                "publisher": {"type": "string", "description": "New publisher, if changing."},
+                "path": {"type": "string", "description": "New file path, if changing."},
+                "process": {"type": "string", "description": "New process name, if changing."},
+                "parent_process": {"type": "string", "description": "New parent process, if changing."},
+                "sha256": {"type": "string", "description": "New SHA256 hash, if changing."},
+                "signer": {"type": "string", "description": "New signer, if changing."},
+            },
+            "required": ["rule_id", "scope_id"],
+        },
+    },
+    {
+        "name": "request_clarification",
+        "description": "Ask for missing rule ID or scope ID.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "missing_fields": {"type": "array", "items": {"type": "string"}},
+                "questions": {"type": "array", "items": {"type": "string"}},
+            },
+            "required": ["missing_fields", "questions"],
+        },
+    },
+]
+
+_UPDATE_SYSTEM: list[anthropic.types.TextBlockParam] = [
+    {
+        "type": "text",
+        "text": (
+            "You are a NAC rule update assistant. Extract the rule ID, scope ID, and ONLY the fields "
+            "the user explicitly mentions changing.\n"
+            "Call emit_update_intent when rule_id and scope_id are present.\n"
+            "Call request_clarification if rule ID or scope ID is missing.\n"
+            "Never include fields the user did not mention — only extract what they want to change."
+        ),
+        "cache_control": {"type": "ephemeral"},
+    }
+]
+
+
+def interpret_update(user_text: str) -> UpdateIntent | ClarificationNeeded:
+    """Extract update intent — only fields the user explicitly mentioned changing."""
+    logger.info("Interpreting update request (length=%d)", len(user_text))
+
+    response = _client.messages.create(
+        model=settings.anthropic_model,
+        max_tokens=512,
+        temperature=0,
+        system=_UPDATE_SYSTEM,
+        tools=_UPDATE_TOOLS,
+        tool_choice={"type": "any"},
+        messages=[{"role": "user", "content": user_text}],
+    )
+
+    tool_use = next((b for b in response.content if b.type == "tool_use"), None)
+    if tool_use is None:
+        raise ValueError("Claude did not call a tool.")
+
+    if tool_use.name == "emit_update_intent":
+        args = tool_use.input
+        return UpdateIntent(
+            rule_id=str(args["rule_id"]),
+            scope_type=args.get("scope_type", "SITE"),
+            scope_id=str(args["scope_id"]),
+            rule_name=args.get("rule_name"),
+            behavior=args.get("behavior"),
+            os_type=args.get("os_type"),
+            propagation=args.get("propagation"),
+            publisher=args.get("publisher"),
+            path=args.get("path"),
+            process=args.get("process"),
+            parent_process=args.get("parent_process"),
+            sha256=args.get("sha256"),
+            signer=args.get("signer"),
+        )
+
+    if tool_use.name == "request_clarification":
+        return ClarificationNeeded.model_validate(tool_use.input)
+
+    raise ValueError(f"Unexpected tool: {tool_use.name}")

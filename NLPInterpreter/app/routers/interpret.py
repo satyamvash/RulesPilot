@@ -3,7 +3,7 @@ import logging
 from fastapi import APIRouter, Header, HTTPException, status
 
 from app.config import settings
-from app.models.rule import ClarificationNeeded, InterpretRequest, InterpretResponse
+from app.models.rule import ClarificationNeeded, DeleteRequest, DeleteResponse, InterpretRequest, InterpretResponse, UpdateRequest, UpdateResponse
 from app.services import acm_client, interpreter
 
 logger = logging.getLogger(__name__)
@@ -60,3 +60,72 @@ async def interpret_rule(
     logger.info("Rule created successfully in ACM.")
 
     return InterpretResponse(intent=result, created_rule=created)
+
+
+@router.post("/delete", response_model=DeleteResponse)
+async def delete_rule(
+    request: DeleteRequest,
+    authorization: str = Header(..., description="Bearer <token>"),
+) -> DeleteResponse:
+    """
+    Delete NAC rule(s) from natural language text.
+
+    Examples:
+    - "Delete rule 126 from site 2440012200350466160"
+    - "Remove rules 125 and 126 in site 2440012200350466160"
+    """
+    if len(request.text) > settings.max_input_length:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=f"Input exceeds maximum length of {settings.max_input_length} characters.",
+        )
+
+    token = authorization.removeprefix("Bearer ").strip()
+    if not token:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Missing auth token.")
+
+    result = interpreter.interpret_delete(request.text)
+
+    if isinstance(result, ClarificationNeeded):
+        logger.info("Delete clarification needed: %s", result.missing_fields)
+        return DeleteResponse(deleted_ids=[], clarification_needed=result)
+
+    acm_response = await acm_client.delete_rules(result, bearer_token=token)
+    logger.info("Rules deleted successfully: ids=%s", result.rule_ids)
+
+    return DeleteResponse(deleted_ids=result.rule_ids, acm_response=acm_response)
+
+
+@router.post("/update", response_model=UpdateResponse)
+async def update_rule(
+    request: UpdateRequest,
+    authorization: str = Header(..., description="Bearer <token>"),
+) -> UpdateResponse:
+    """
+    Update an existing NAC rule from natural language text.
+
+    Examples:
+    - "Change rule 126 in site 2440012200350466160 to allow instead of block"
+    - "Rename rule 125 in site 2440012200350466160 to 'Safe Publisher'"
+    - "Update rule 126 in site 2440012200350466160 to also apply on MacOS"
+    """
+    if len(request.text) > settings.max_input_length:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=f"Input exceeds maximum length of {settings.max_input_length} characters.",
+        )
+
+    token = authorization.removeprefix("Bearer ").strip()
+    if not token:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Missing auth token.")
+
+    result = interpreter.interpret_update(request.text)
+
+    if isinstance(result, ClarificationNeeded):
+        logger.info("Update clarification needed: %s", result.missing_fields)
+        return UpdateResponse(rule_id="", clarification_needed=result)
+
+    acm_response = await acm_client.update_rule(result, bearer_token=token)
+    logger.info("Rule %s updated successfully.", result.rule_id)
+
+    return UpdateResponse(rule_id=result.rule_id, acm_response=acm_response)

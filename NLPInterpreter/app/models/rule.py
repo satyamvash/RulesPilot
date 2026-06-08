@@ -77,3 +77,45 @@ class InterpretResponse(BaseModel):
     clarification_needed: ClarificationNeeded | None = None
     created_rule: dict[str, Any] | None = None
     dry_run: bool = False
+
+
+class UpdateRequest(BaseModel):
+    text: str = Field(..., description="Free-form text describing which rule to update and how")
+
+
+class UpdateIntent(BaseModel):
+    rule_id: str = Field(..., description="ID of the rule to update")
+    scope_type: ScopeType = Field(ScopeType.SITE, description="SITE, ACCOUNT, or GROUP")
+    scope_id: str = Field(..., description="Scope ID")
+    rule_name: str | None = None
+    behavior: Behavior | None = None
+    os_type: list[OsType] | None = None
+    propagation: bool | None = None
+    publisher: str | None = None
+    path: str | None = None
+    process: str | None = None
+    parent_process: str | None = None
+    sha256: str | None = None
+    signer: str | None = None
+
+
+class UpdateResponse(BaseModel):
+    rule_id: str
+    acm_response: dict[str, Any] | None = None
+    clarification_needed: ClarificationNeeded | None = None
+
+
+class DeleteRequest(BaseModel):
+    text: str = Field(..., description="Free-form text describing which rule(s) to delete")
+
+
+class DeleteIntent(BaseModel):
+    rule_ids: list[str] = Field(..., description="Rule IDs to delete")
+    scope_type: ScopeType = Field(..., description="SITE, ACCOUNT, or GROUP")
+    scope_id: str = Field(..., description="Scope ID")
+
+
+class DeleteResponse(BaseModel):
+    deleted_ids: list[str]
+    acm_response: dict[str, Any] | None = None
+    clarification_needed: ClarificationNeeded | None = None
