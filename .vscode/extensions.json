@@ -1,0 +1,10 @@
+{
+  "recommendations": [
+    "ms-python.python",
+    "ms-python.pylance",
+    "charliermarsh.ruff",
+    "tamasfe.even-better-toml",
+    "graphql.vscode-graphql",
+    "ms-azuretools.vscode-docker"
+  ]
+}
