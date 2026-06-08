@@ -7,7 +7,7 @@ class Settings(BaseSettings):
     # Anthropic
     anthropic_api_key: str
     # claude-3-haiku is the lowest cost Anthropic model
-    anthropic_model: str = "claude-3-haiku-20240307"
+    anthropic_model: str = "claude-haiku-4-5-20251001"
 
     # app-control-manager GraphQL endpoint
     acm_graphql_url: str

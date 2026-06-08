@@ -6,7 +6,7 @@ load_dotenv()
 import anthropic
 
 api_key = os.getenv("ANTHROPIC_API_KEY")
-model = os.getenv("ANTHROPIC_MODEL", "claude-3-haiku-20240307")
+model = os.getenv("ANTHROPIC_MODEL", "claude-haiku-4-5-20251001")
 
 print(f"Using model : {model}")
 print(f"Key preview : {api_key[:15]}..." if api_key else "ERROR: ANTHROPIC_API_KEY not set")
