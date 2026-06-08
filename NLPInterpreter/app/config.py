@@ -4,9 +4,10 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8")
 
-    # Gemini
-    gemini_api_key: str
-    gemini_model: str = "gemini-2.0-flash"
+    # Anthropic
+    anthropic_api_key: str
+    # claude-3-haiku is the lowest cost Anthropic model
+    anthropic_model: str = "claude-3-haiku-20240307"
 
     # app-control-manager GraphQL endpoint
     acm_graphql_url: str
