@@ -10,7 +10,7 @@ class Settings(BaseSettings):
     anthropic_model: str = "claude-haiku-4-5-20251001"
 
     # app-control-manager base URL (REST) — set ACM_URL in .env
-    acm_url: str = "http://localhost:7091"
+    acm_url: str = "http://localhost:8080"
 
     # Whisper (local speech-to-text)
     # Options: tiny (~150MB), base (~300MB), small (~500MB), medium (~1.5GB)
